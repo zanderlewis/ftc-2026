@@ -50,9 +50,6 @@ public class LimelightMoveToAprilTag extends OpMode {
         // Display robot telemetry
         robot.displayTelemetry(telemetry);
 
-        // Handle pipeline switching
-        vision.handlePipelineSwitching(gamepad1.a, gamepad1.back);
-
         telemetry.update();
     }
 

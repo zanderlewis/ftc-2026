@@ -140,7 +140,7 @@ public class Robot {
         double lateralPower = calculateLateralPower(targetData.yPosition);
         double yawPower = calculateYawPower(targetData.botPose.getOrientation().getYaw());
 
-        drive(axialPower, lateralPower, yawPower);
+        drive(-axialPower, -lateralPower, yawPower);
 
         boolean atTarget = isAtTarget(targetData.xPosition, targetData.yPosition, 
                                       targetData.botPose.getOrientation().getYaw());
