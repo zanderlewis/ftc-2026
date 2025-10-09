@@ -12,11 +12,22 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 public class Robot {
 
     // Constants for movement
-    private static final double TARGET_DISTANCE_THRESHOLD = 0.1;
-    private static final double Y_POSITION_TOLERANCE = 0.05;
-    private static final double FORWARD_POWER = 0.5;
-    private static final double LATERAL_GAIN = 0.4;
-    private static final double MAX_LATERAL_POWER = 0.5;
+    private static final double TARGET_DISTANCE_THRESHOLD = 0.15; // meters - stop when this close
+    private static final double LATERAL_TOLERANCE = 0.05; // meters - center tolerance
+    private static final double YAW_TOLERANCE = 5.0; // degrees - rotation tolerance
+    
+    // Proportional control gains
+    private static final double AXIAL_GAIN = 1.5; // For forward/backward movement (X axis)
+    private static final double LATERAL_GAIN = 1.5; // For left/right strafing (Y axis)
+    private static final double YAW_GAIN = 0.03; // For rotation
+    
+    // Power limits
+    private static final double MAX_AXIAL_POWER = 0.6;
+    private static final double MAX_LATERAL_POWER = 0.6;
+    private static final double MAX_YAW_POWER = 0.4;
+    
+    // Minimum power to overcome friction
+    private static final double MIN_POWER = 0.15;
 
     // Drive motors
     private DcMotor frontLeftDrive = null;
@@ -115,52 +126,113 @@ public class Robot {
 
     /**
      * Move towards an April Tag target automatically
+     * BotPose coordinates: X = forward/back, Y = left/right, Z = up/down
+     * Yaw = rotation angle to face the tag
      */
     public MovementResult moveToAprilTag(Vision.TargetData targetData) {
         if (!targetData.isAcquired) {
             stopMovement();
-            return new MovementResult(false, "No target acquired", 0.0, 0.0);
+            return new MovementResult(false, "No target acquired", 0.0, 0.0, 0.0);
         }
 
+        // Calculate power for each axis using proportional control
         double axialPower = calculateAxialPower(targetData.xPosition);
         double lateralPower = calculateLateralPower(targetData.yPosition);
+        double yawPower = calculateYawPower(targetData.botPose.getOrientation().getYaw());
 
-        drive(axialPower, lateralPower, 0.0);
+        drive(axialPower, lateralPower, yawPower);
 
-        boolean atTarget = isAtTarget(targetData.xPosition, targetData.yPosition);
+        boolean atTarget = isAtTarget(targetData.xPosition, targetData.yPosition, 
+                                      targetData.botPose.getOrientation().getYaw());
         @SuppressLint("DefaultLocale") String status = atTarget ?
-            String.format("Target reached! X: %.2f < %.2f, Y: %.2f centered",
-                targetData.xPosition, TARGET_DISTANCE_THRESHOLD, targetData.yPosition) :
-            String.format("Moving - X: %.2f, Y: %.2f", targetData.xPosition, targetData.yPosition);
+            String.format("Target reached! X: %.2fm, Y: %.2fm, Yaw: %.1f°",
+                targetData.xPosition, targetData.yPosition, targetData.botPose.getOrientation().getYaw()) :
+            String.format("Moving - X: %.2fm, Y: %.2fm, Yaw: %.1f°", 
+                targetData.xPosition, targetData.yPosition, targetData.botPose.getOrientation().getYaw());
 
-        return new MovementResult(atTarget, status, axialPower, lateralPower);
+        return new MovementResult(atTarget, status, axialPower, lateralPower, yawPower);
     }
 
     /**
-     * Calculate forward/backward power based on X position
+     * Calculate forward/backward power based on X position (distance)
+     * Positive X means target is ahead, negative means behind
      */
     private double calculateAxialPower(double xPosition) {
-        return xPosition >= TARGET_DISTANCE_THRESHOLD ? FORWARD_POWER : 0.0;
-    }
-
-    /**
-     * Calculate lateral power for centering on target
-     */
-    private double calculateLateralPower(double yPosition) {
-        if (Math.abs(yPosition) <= Y_POSITION_TOLERANCE) {
+        // If we're close enough, stop
+        if (Math.abs(xPosition) <= TARGET_DISTANCE_THRESHOLD) {
             return 0.0;
         }
 
-        double power = -yPosition * LATERAL_GAIN;
-        return Math.max(-MAX_LATERAL_POWER, Math.min(MAX_LATERAL_POWER, power));
+        // Proportional control: power proportional to distance
+        double power = xPosition * AXIAL_GAIN;
+        
+        // Clamp to max power
+        power = Math.max(-MAX_AXIAL_POWER, Math.min(MAX_AXIAL_POWER, power));
+        
+        // Apply minimum power to overcome friction
+        if (Math.abs(power) > 0 && Math.abs(power) < MIN_POWER) {
+            power = Math.signum(power) * MIN_POWER;
+        }
+        
+        return power;
     }
 
     /**
-     * Check if robot is at the target position
+     * Calculate lateral (strafe) power for centering on target
+     * Positive Y means target is to the right, negative means left
      */
-    private boolean isAtTarget(double xPosition, double yPosition) {
-        return xPosition < TARGET_DISTANCE_THRESHOLD &&
-               Math.abs(yPosition) <= Y_POSITION_TOLERANCE;
+    private double calculateLateralPower(double yPosition) {
+        // If centered enough, stop strafing
+        if (Math.abs(yPosition) <= LATERAL_TOLERANCE) {
+            return 0.0;
+        }
+
+        // Proportional control with negative sign (strafe opposite direction to center)
+        double power = -yPosition * LATERAL_GAIN;
+        
+        // Clamp to max power
+        power = Math.max(-MAX_LATERAL_POWER, Math.min(MAX_LATERAL_POWER, power));
+        
+        // Apply minimum power to overcome friction
+        if (Math.abs(power) > 0 && Math.abs(power) < MIN_POWER) {
+            power = Math.signum(power) * MIN_POWER;
+        }
+        
+        return power;
+    }
+
+    /**
+     * Calculate yaw (rotation) power to face the target
+     * Yaw is in degrees - positive means target is to the left, negative means right
+     */
+    private double calculateYawPower(double yaw) {
+        // If facing the target, stop rotating
+        if (Math.abs(yaw) <= YAW_TOLERANCE) {
+            return 0.0;
+        }
+
+        // Proportional control: power proportional to angle error
+        // Positive yaw = target is left, so turn left (positive power)
+        double power = yaw * YAW_GAIN;
+        
+        // Clamp to max power
+        power = Math.max(-MAX_YAW_POWER, Math.min(MAX_YAW_POWER, power));
+        
+        // Apply minimum power to overcome friction
+        if (Math.abs(power) > 0 && Math.abs(power) < MIN_POWER) {
+            power = Math.signum(power) * MIN_POWER;
+        }
+        
+        return power;
+    }
+
+    /**
+     * Check if robot is at the target position and orientation
+     */
+    private boolean isAtTarget(double xPosition, double yPosition, double yaw) {
+        return Math.abs(xPosition) <= TARGET_DISTANCE_THRESHOLD &&
+               Math.abs(yPosition) <= LATERAL_TOLERANCE &&
+               Math.abs(yaw) <= YAW_TOLERANCE;
     }
 
     /**
@@ -220,12 +292,15 @@ public class Robot {
         public final String status;
         public final double axialPower;
         public final double lateralPower;
+        public final double yawPower;
 
-        public MovementResult(boolean atTarget, String status, double axialPower, double lateralPower) {
+        public MovementResult(boolean atTarget, String status, double axialPower, 
+                            double lateralPower, double yawPower) {
             this.atTarget = atTarget;
             this.status = status;
             this.axialPower = axialPower;
             this.lateralPower = lateralPower;
+            this.yawPower = yawPower;
         }
     }
 }

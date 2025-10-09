@@ -40,8 +40,8 @@ public class LimelightMoveToAprilTag extends OpMode {
         if (targetData.isAcquired) {
             Robot.MovementResult movementResult = robot.moveToAprilTag(targetData);
             telemetry.addData("Action", movementResult.status);
-            telemetry.addData("Powers", "Axial: %.2f, Lateral: %.2f",
-                    movementResult.axialPower, movementResult.lateralPower);
+            telemetry.addData("Powers", "Axial: %.2f, Lateral: %.2f, Yaw: %.2f",
+                    movementResult.axialPower, movementResult.lateralPower, movementResult.yawPower);
         } else {
             robot.stopMovement();
             telemetry.addData("Action", "Stopped - No target detected");
